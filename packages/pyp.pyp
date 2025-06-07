@@ -15,6 +15,8 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
+PYP_PATH = os.path.abspath(__file__)
+
 STORE = Path.home() / ".pypstore"
 CACHE = Path.home() / ".pypcache"
 
@@ -37,6 +39,105 @@ def load_pyp_metadata(pyp_file: str) -> dict:
                 context[key.id] = value
 
     return meta
+
+import json
+
+PYPPI_REPO = Path.home() / "Projects/pyppi"  # <-- Update path to your pyppi repo
+PYPPI_REGISTRY = PYPPI_REPO / "registry.json"
+PYPPI_PACKAGES = PYPPI_REPO / "packages"
+
+def push(pyp_file):
+    meta = load_pyp_metadata(pyp_file)
+    name = meta["__pyp_name__"]
+    version = meta.get("__pyp_ver__", "0.0.1")
+    cli = bool(meta.get("__pyp_cli__", False))
+    desc = meta.get("__doc__", "").strip().splitlines()[0] if "__doc__" in meta else "No description."
+    
+    PYPPI_PACKAGES.mkdir(parents=True, exist_ok=True)
+    target = PYPPI_PACKAGES / f"{name}.pyp"
+    shutil.copy(pyp_file, target)
+
+    if PYPPI_REGISTRY.exists():
+        with open(PYPPI_REGISTRY) as f:
+            registry = json.load(f)
+    else:
+        registry = {}
+
+    registry[name] = {
+        "name": name,
+        "version": version,
+        "url": f"https://zimoshi.github.io/pyppi/packages/{name}.pyp",
+        "description": desc,
+        "cli": cli
+    }
+
+    with open(PYPPI_REGISTRY, "w") as f:
+        json.dump(registry, f, indent=2)
+
+    print(f"✅ Pushed {name} v{version} to local PyPPI at {target}")
+    print(f"👉 Next: cd {PYPPI_REPO} && git add . && git commit -m 'Add {name} v{version}' && git push")
+
+import base64
+import configparser
+import requests
+
+def load_pyppi_config():
+    cfg = configparser.ConfigParser()
+    cfg.read(Path.home() / ".pyprc")
+    section = cfg["pyppi"]
+    return section["repo"], section["token"]
+
+def github_upload_file(repo, token, path, content_bytes, message):
+    api = f"https://api.github.com/repos/{repo}/contents/{path}"
+    headers = {"Authorization": f"token {token}"}
+    content_encoded = base64.b64encode(content_bytes).decode("utf-8")
+
+    # Check if file exists (for SHA)
+    res = requests.get(api, headers=headers)
+    sha = res.json().get("sha") if res.status_code == 200 else None
+
+    payload = {
+        "message": message,
+        "content": content_encoded,
+        "branch": "main"
+    }
+    if sha:
+        payload["sha"] = sha
+
+    res = requests.put(api, headers=headers, json=payload)
+    if res.status_code in (200, 201):
+        print(f"✅ Uploaded: {path}")
+    else:
+        print(f"[!] Failed to upload {path}: {res.json().get('message')}")
+
+def push_remote(pyp_file):
+    meta = load_pyp_metadata(pyp_file)
+    name = meta["__pyp_name__"]
+    version = meta.get("__pyp_ver__", "0.0.1")
+    cli = bool(meta.get("__pyp_cli__", False))
+    desc = meta.get("__doc__", "").strip().splitlines()[0] if "__doc__" in meta else "No description."
+
+    repo, token = load_pyppi_config()
+
+    # Upload .pyp file
+    with open(pyp_file, "rb") as f:
+        content_bytes = f.read()
+    github_upload_file(repo, token, f"packages/{name}.pyp", content_bytes, f"Add {name} v{version}")
+
+    # Update registry
+    registry_url = f"https://raw.githubusercontent.com/{repo}/main/registry.json"
+    r = requests.get(registry_url)
+    registry = r.json() if r.status_code == 200 else {}
+
+    registry[name] = {
+        "name": name,
+        "version": version,
+        "url": f"https://zimoshi.github.io/pyppi/packages/{name}.pyp",
+        "description": desc,
+        "cli": cli
+    }
+
+    github_upload_file(repo, token, "registry.json", json.dumps(registry, indent=2).encode(), f"Update registry: {name} v{version}")
 
 def install(pyp_file):
     meta = load_pyp_metadata(pyp_file)
@@ -166,7 +267,7 @@ def ensure_cli_wrapper():
     cli = Path("/usr/local/bin/pyp")
     if not cli.exists():
         print("Installing CLI wrapper at /usr/local/bin/pyp")
-        cli.write_text(""\"#!/bin/bash\nexec python3 -m pyp "$@"\n""\")
+        cli.write_text(f"#!/bin/bash\\nexec python3 {PYP_PATH} \\"$@\\"\\n")
         cli.chmod(0o755)
 
 def main():
@@ -187,6 +288,10 @@ def main():
         list_installed()
     elif cmd == "fetch" and len(sys.argv) == 3:
         fetch(sys.argv[2])
+    elif cmd == "push" and len(sys.argv) == 3:
+        push(sys.argv[2])
+    elif cmd == "push" and len(sys.argv) == 4 and sys.argv[3] == "--remote":
+        push_remote(sys.argv[2])
     else:
         print("Invalid command.")
 
