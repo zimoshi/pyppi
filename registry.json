@@ -3,7 +3,7 @@
     "name": "pyp",
     "version": "2.0.0",
     "url": "https://zimoshi.github.io/pyppi/packages/pyp.pyp",
-    "description": "Minimal setup-free Python package manager",
+    "description": "A setup-free Python package manager",
     "cli": true
   }
 }
