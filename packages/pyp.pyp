@@ -178,6 +178,14 @@ def install(pyp_file):
         symlink_path.parent.mkdir(parents=True, exist_ok=True)
         symlink_path.symlink_to(module_dir)
 
+    if meta.get("__pyp_c_mod__") and meta.get("__pyp_build_cmd__") == "pymake":
+        print(f"🔧 Building C extension using pymake...")
+        try:
+            subprocess.run(["pymake"], cwd=module_dir, check=True)
+        except Exception as e:
+            print(f"[!] Build failed: {e}")
+            return
+
     # CLI shim
     if meta.get("__pyp_cli__", False):
         bin_path = Path("/usr/local/bin") / name
