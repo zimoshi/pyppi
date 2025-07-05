@@ -5,5 +5,12 @@
     "url": "https://zimoshi.github.io/pyppi/packages/pyp.pyp",
     "description": "A setup-free Python package manager",
     "cli": true
+  },
+  "jobsh": {
+    "name": "jobsh",
+    "version": "1.0.0",
+    "url": "https://zimoshi.github.io/pyppi/packages/jobsh.pyp",
+    "description": "Run jobs file format",
+    "cli": true
   }
 }
